@@ -24,17 +24,8 @@ EXPOSE 6020
 ENV FLASK_RUN_PORT=6020
 # Recommended: Disable Flask development server debug mode in production image
 ENV FLASK_DEBUG=false
-# Set a default internal path for CSV if not mounted (won't persist container restarts)
-ENV CSV_LOG_PATH=/app/generated_emails.csv
 
 # Run app.py when the container launches using Gunicorn
 # Use 0.0.0.0 to bind to all network interfaces
 # Use app:app to specify the module and the Flask app instance
 CMD ["gunicorn", "--bind", "0.0.0.0:6020", "--workers", "2", "app:app"]
-
-# --- Notes on CSV Logging ---
-# To make the CSV log persistent and accessible outside the container,
-# you MUST mount a host directory to the path specified by CSV_LOG_PATH
-# when running `docker run`.
-# Example mount: -v /path/on/host/logs:/app/logs
-# And set in .env: CSV_LOG_PATH=/app/logs/generated_emails.csv
