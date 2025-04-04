@@ -51,13 +51,13 @@ Fill in the .env file with your Cloudflare API token, zone id, domain name, and 
 Build the Docker image:
 
 ```bash
-docker build -t cloudflare-temp-mail .
+docker build -t cloudflare-temp-mail-img .
 ```
 
 Run the Docker container:
 
 ```bash
-docker run -d -p 6020:6020 --env-file .env --rm --name cloudflare-temp-email cloudflare-temp-mail
+docker run -d -p 6020:6020 --env-file .env --rm --name cloudflare-temp-mail cloudflare-temp-mail-img
 ```
 
 The API should now be running on port `6020`
