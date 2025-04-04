@@ -25,7 +25,7 @@ cp .env.example .env
 
 Fill in the .env file with your Cloudflare API token, zone id, domain name, and destination email address
 
-To get your Cloudflare API token:
+#### To get your Cloudflare API token:
 
 1. Go to your [Cloudflare dashboard](https://dash.cloudflare.com)
 2. Click on your profile icon in the top right corner, and select `Profile`.
@@ -37,7 +37,7 @@ To get your Cloudflare API token:
 8. For the "Zone Resources, select `Include`, then `Specific Zone`, then the domain you have.
 9. Press continue to summary, and copy the token.
 
-To get your Cloudflare Zone ID:
+#### To get your Cloudflare Zone ID:
 
 1. Go to your [Cloudflare dashboard](https://dash.cloudflare.com)
 2. Under domain names, find the domain you want to use
