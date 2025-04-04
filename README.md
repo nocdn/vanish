@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-### Usage with Docker (recommended)
+### Deployment with Docker (recommended)
 
 ##### Prerequisites
 
@@ -62,16 +62,24 @@ docker run -d -p 6020:6020 --env-file .env --rm --name cloudflare-temp-email clo
 
 The API should now be running on port `6020`
 
-To access the API, you can use the following curl command:
+### Usage
+
+To generate an email address:
 
 ```bash
 curl http://localhost:6020/generate
 ```
 
-To list the emails, you can use the following curl command:
+To list all generated email addresses:
 
 ```bash
 curl http://localhost:6020/list
+```
+
+To delete an email address:
+
+```bash
+curl -X DELETE http://localhost:6020/remove/<email>
 ```
 
 ### Installation for local development
