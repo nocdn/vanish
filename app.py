@@ -7,10 +7,13 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
+import atexit
 
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
+from flask_limiter import Limiter # Added
+from flask_limiter.util import get_remote_address # Added
 
 load_dotenv()
 
@@ -19,7 +22,16 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = app.logger
 
-DATABASE_PATH = '/app/data/emails.db' 
+# --- Rate Limiting Setup ---
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[os.getenv("RATE_LIMIT_DEFAULT", "60 per minute")], # Apply default limit
+    storage_uri="memory://",  # Simple in-memory storage, consider Redis for multi-process/scaled setups
+    strategy="fixed-window" # or "moving-window"
+)
+
+DATABASE_PATH = '/app/data/emails.db'
 
 WORDS = [
     "apple", "banana", "cherry", "date", "elderberry", "fig", "grape", "honeydew",
@@ -32,6 +44,10 @@ WORDS = [
 ]
 
 RULE_NAME_PREFIX = "temp_email_api:"
+
+# Custom Exception for expiry errors
+class InvalidExpiryError(ValueError):
+    pass
 
 # --- Database Setup ---
 def init_db():
@@ -55,22 +71,30 @@ def init_db():
         logger.info(f"Database initialized successfully at internal path {DATABASE_PATH}")
     except Exception as e:
         logger.exception(f"CRITICAL: Failed to initialize database at {DATABASE_PATH}: {e}")
-        raise # Stop the application if DB initialization fails
+        raise
 
 
 # --- Helper Functions ---
 def parse_expiry(expiry_str):
+    """
+    Parses expiry string (e.g., '1h', '3d', '30m') into a future datetime object.
+    Raises InvalidExpiryError if format is wrong or duration is too short (min 10m).
+    Returns None if no expiry_str is provided.
+    """
+    MINIMUM_EXPIRY_MINUTES = 10 # Keep minimum check here or make it env var too
     if not expiry_str: return None
     match = re.match(r'^(\d+)([hdm])$', expiry_str.lower())
     if not match:
-        logger.warning(f"Invalid expiry format: {expiry_str}. Using no expiry.")
-        return None
+        raise InvalidExpiryError(f"Invalid expiry format: '{expiry_str}'. Use format like '10m', '1h', '2d'.")
     value, unit = match.groups(); value = int(value)
     now = datetime.now(timezone.utc)
     if unit == 'h': delta = timedelta(hours=value)
     elif unit == 'd': delta = timedelta(days=value)
     elif unit == 'm': delta = timedelta(minutes=value)
-    else: return None
+    else: raise InvalidExpiryError("Internal error parsing expiry unit.")
+    min_delta = timedelta(minutes=MINIMUM_EXPIRY_MINUTES)
+    if delta < min_delta:
+        raise InvalidExpiryError(f"Minimum expiry duration is {MINIMUM_EXPIRY_MINUTES} minutes. Requested: '{expiry_str}'")
     return now + delta
 
 def add_email_to_db(email, expires_at):
@@ -276,7 +300,13 @@ def cleanup_expired_emails():
 
 
 # --- Flask Routes ---
+
+# get rate limit strings from env var, provide defaults if empty
+generate_rate_limit = os.getenv("RATE_LIMIT_GENERATE", "20 per day")
+default_rate_limit = os.getenv("RATE_LIMIT_DEFAULT", "60 per minute")
+
 @app.route('/generate', methods=['GET'])
+@limiter.limit(generate_rate_limit)
 def generate_email_route():
     logger.info(f"Received request on /generate from {request.remote_addr}")
     api_token = os.getenv('CLOUDFLARE_API_TOKEN')
@@ -298,6 +328,9 @@ def generate_email_route():
         random_prefix = generate_random_prefix()
         temp_email = f"{random_prefix}@{domain_name}"
         logger.info(f"Generated temporary email: {temp_email}, Expiry: {expires_at or 'None'}")
+    except InvalidExpiryError as e:
+        logger.warning(f"Invalid expiry requested: {e}")
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.exception("Error during email generation/expiry parsing")
         return jsonify({'error': f"Failed to generate email or parse expiry: {e}"}), 500
@@ -311,6 +344,7 @@ def generate_email_route():
         return jsonify({'error': 'Failed to create Cloudflare routing rule', 'details': cf_error_details}), 500
 
 @app.route('/list', methods=['GET'])
+@limiter.limit(default_rate_limit)
 def list_email_routes():
     logger.info(f"Received request on /list from {request.remote_addr}")
     api_token = os.getenv('CLOUDFLARE_API_TOKEN')
@@ -334,6 +368,7 @@ def list_email_routes():
     return jsonify({'generated_emails': generated_emails}), 200
 
 @app.route('/remove/<path:email_to_remove>', methods=['DELETE'])
+@limiter.limit(default_rate_limit)
 def remove_email_route(email_to_remove):
     logger.info(f"Received request on /remove for {email_to_remove} from {request.remote_addr}")
     api_token = os.getenv('CLOUDFLARE_API_TOKEN')
@@ -363,18 +398,84 @@ def remove_email_route(email_to_remove):
     else:
         return jsonify({'error': 'Cloudflare failed to delete the rule', 'details': cf_delete_error}), 500
 
+
 @app.route('/health', methods=['GET'])
+@limiter.limit(default_rate_limit)
 def health_check():
-    return jsonify({'status': 'healthy'}), 200
+    """Enhanced health check endpoint."""
+    logger.debug("Received request on /health")
+    status_code = 200
+    response = {
+        'status': 'healthy',
+        'checks': {
+            'database': 'ok',
+            'cloudflare_api': 'ok'
+        }
+    }
+
+    # 1. check Database Connection
+    conn = None
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        conn.close()
+        logger.debug("Health check: Database connection successful.")
+    except Exception as e:
+        logger.error(f"Health check: Database connection failed: {e}")
+        response['status'] = 'unhealthy'
+        response['checks']['database'] = f"failed: {e}"
+        status_code = 503 # service unavailable
+
+    # 2. check Cloudflare API Connection
+    api_token = os.getenv('CLOUDFLARE_API_TOKEN')
+    if api_token: # only check if token is configured
+        headers = {"Authorization": f"Bearer {api_token}"}
+        # using very lightweight endpoint like listing zones with limit 1
+        cf_endpoint = "https://api.cloudflare.com/client/v4/zones?per_page=1"
+        try:
+            cf_response = requests.get(cf_endpoint, headers=headers, timeout=5)
+            if cf_response.status_code == 403: # specific check for bad token
+                 logger.warning("Health check: Cloudflare API returned 403 Forbidden (check token).")
+                 response['status'] = 'degraded' # service might work, but CF part has issues
+                 response['checks']['cloudflare_api'] = 'forbidden (check token)'
+                 if status_code == 200: status_code = 200
+            elif not cf_response.ok: # catch other non-2xx errors
+                 logger.warning(f"Health check: Cloudflare API check failed with status {cf_response.status_code}.")
+                 response['status'] = 'degraded'
+                 response['checks']['cloudflare_api'] = f"failed (status {cf_response.status_code})"
+                 if status_code == 200: status_code = 200 # Or 503
+            else:
+                 logger.debug("Health check: Cloudflare API connection successful.")
+                 # response['checks']['cloudflare_api'] remains 'ok'
+        except requests.exceptions.Timeout:
+            logger.warning("Health check: Cloudflare API check timed out.")
+            response['status'] = 'degraded'
+            response['checks']['cloudflare_api'] = 'timeout'
+            if status_code == 200: status_code = 200 # Or 503
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Health check: Cloudflare API connection error: {e}")
+            response['status'] = 'degraded'
+            response['checks']['cloudflare_api'] = f"connection error: {e}"
+            if status_code == 200: status_code = 200 # Or 503
+    else:
+        logger.warning("Health check: Skipping Cloudflare API check (no token found).")
+        response['checks']['cloudflare_api'] = 'skipped (no token)'
+        # don't change overall status just because token is missing
+
+    return jsonify(response), status_code
+
 
 # --- Initialize DB and Scheduler ---
-# this code runs ONCE when the module is imported (e.g., by Gunicorn master process)
 try:
-    init_db() # initialise DB first
+    init_db()
     scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(cleanup_expired_emails, 'interval', minutes=10) # check every 10 mins
+    cleanup_interval_minutes = int(os.getenv('CLEANUP_INTERVAL_MINUTES', '10'))
+    scheduler.add_job(cleanup_expired_emails, 'interval', minutes=cleanup_interval_minutes)
+    atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)
     scheduler.start()
-    logger.info("Background scheduler started.")
+    logger.info(f"Background scheduler started. Cleanup interval: {cleanup_interval_minutes} minutes.")
 except Exception as e:
     logger.exception("CRITICAL: Error during initial setup (DB or Scheduler). Application might not function correctly.")
     import sys
@@ -383,13 +484,7 @@ except Exception as e:
 
 # --- Main Execution (for direct python app.py run only) ---
 if __name__ == '__main__':
-    # this block is not executed by Gunicorn in the Docker container
     logger.info("Running Flask development server (not for production)...")
     port = int(os.getenv('FLASK_RUN_PORT', 6020))
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    try:
-        app.run(host='0.0.0.0', port=port, debug=debug_mode)
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Flask development server shutting down...")
-        if 'scheduler' in globals() and scheduler.running:
-             scheduler.shutdown() # attempt graceful shutdown if running directly
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
