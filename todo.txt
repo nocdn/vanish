@@ -1,0 +1,1 @@
+- add an optional "note" or comment to the generated emails
