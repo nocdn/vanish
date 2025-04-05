@@ -26,9 +26,9 @@ logger = app.logger
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=[os.getenv("RATE_LIMIT_DEFAULT", "60 per minute")], # Apply default limit
-    storage_uri="memory://",  # Simple in-memory storage, consider Redis for multi-process/scaled setups
-    strategy="fixed-window" # or "moving-window"
+    default_limits=[os.getenv("RATE_LIMIT_DEFAULT", "60 per minute")], 
+    storage_uri="memory://",  
+    strategy="fixed-window"
 )
 
 DATABASE_PATH = '/app/data/emails.db'
