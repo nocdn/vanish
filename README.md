@@ -56,8 +56,10 @@ This API allows you to quickly generate temporary email forwarding rules on your
       2.  Select your `DOMAIN_NAME`.
       3.  On the **Overview** page for the domain, find the **"Zone ID"** on the right-hand side and copy it into your `.env` file.
 
-    > [!IMPORTANT]
-    > You must verify your `DESTINATION_EMAIL` with Cloudflare first as a Destination Address in your Cloudflare Email Routing settings before the API can create rules forwarding to it.
+
+> [!IMPORTANT]
+> You must verify your `DESTINATION_EMAIL` with Cloudflare first as a Destination Address in your Cloudflare Email Routing settings before the API can create rules forwarding to it.
+
 
 4.  **Create Data Directory**:
     This directory will store the persistent SQLite database for tracking email expiry. Create it in your project root (same level as the `.env` file):
