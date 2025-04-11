@@ -75,14 +75,14 @@ This API allows you to quickly generate temporary email forwarding rules on your
     ```
 
 6.  **Run the Docker Container**:
-    This command runs the container in detached mode (`-d`), maps port 6020, loads your `.env` file, mounts the local `./data` directory into the container for database persistence (`-v`), automatically removes the container on exit (`--rm`), and names the container. The `--restart=always` flag will make the container restart if it is ever stopped.
+    This command runs the container in detached mode (`-d`), maps port 6020, loads your `.env` file, mounts the local `./data` directory into the container for database persistence (`-v`) and names the container. The `--restart=always` flag will make the container restart if it is ever stopped.
     ```bash
     docker run -d \
       --restart=always \
       -p 6020:6020 \
       --env-file .env \
       -v "$(pwd)/data":/app/data \
-      --rm --name cloudflare-temp-email \
+      --name cloudflare-temp-email \
       cloudflare-temp-email-img
     ```
 
