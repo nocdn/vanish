@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This API allows you to quickly generate temporary email forwarding rules on your Cloudflare-managed domain. You can optionally set an expiry time (minimum 10 minutes), after which the email rule will be automatically deleted by a background cleanup job.
+This API allows you to quickly generate temporary email forwarding rules on your Cloudflare-managed domain. You can optionally set an expiry time (minimum 5 minutes), after which the email rule will be automatically deleted by a background cleanup job.
 
 ### Deployment with Docker (Recommended)
 
@@ -104,7 +104,7 @@ With comment:
 curl "http://localhost:6020/generate?comment=test"
 ```
 
-With expiry (e.g., 1 hour, 2 days, 30 minutes). Minimum expiry is 10 minutes.
+With expiry (e.g., 1 hour, 2 days, 30 minutes). Minimum expiry is 5 minute.
 
 ```bash
 # Expires in 1 hour
@@ -117,7 +117,7 @@ curl "http://localhost:6020/generate?expiry=2d"
 curl "http://localhost:6020/generate?expiry=30m"
 
 # Error - Too short
-curl "http://localhost:6020/generate?expiry=5m"
+curl "http://localhost:6020/generate?expiry=1m"
 ```
 
 _Successful Response (200 OK):_
@@ -197,7 +197,7 @@ _Response (200 OK):_
 }
 ```
 
-**Automatic Cleanup:** A background job runs every 10 minutes (by default) inside the container to check for emails in the local database that have passed their expiry time. If found, it attempts to delete the corresponding rule from Cloudflare and removes the entry from the database.
+**Automatic Cleanup:** A background job runs every 5 minutes (by default) inside the container to check for emails in the local database that have passed their expiry time. If found, it attempts to delete the corresponding rule from Cloudflare and removes the entry from the database.
 
 ### Installation for Local Development
 
