@@ -56,10 +56,8 @@ This API allows you to quickly generate temporary email forwarding rules on your
       2.  Select your `DOMAIN_NAME`.
       3.  On the **Overview** page for the domain, find the **"Zone ID"** on the right-hand side and copy it into your `.env` file.
 
-
 > [!IMPORTANT]
 > You must verify your `DESTINATION_EMAIL` with Cloudflare first as a Destination Address in your Cloudflare Email Routing settings before the API can create rules forwarding to it.
-
 
 4.  **Create Data Directory**:
     This directory will store the persistent SQLite database for tracking email expiry. Create it in your project root (same level as the `.env` file):
@@ -94,10 +92,16 @@ The API provides the following endpoints:
 
 **Generate an email address:**
 
-Without expiry:
+Without expiry or comment:
 
 ```bash
 curl http://localhost:6020/generate
+```
+
+With comment:
+
+```bash
+curl "http://localhost:6020/generate?comment=test"
 ```
 
 With expiry (e.g., 1 hour, 2 days, 30 minutes). Minimum expiry is 10 minutes.
@@ -120,6 +124,7 @@ _Successful Response (200 OK):_
 
 ```json
 {
+  "comment": "test",
   "email": "random_word123@yourdomain.com",
   "expires_at": "2025-04-06T12:30:00.123456+00:00" // or null if no expiry
 }
@@ -144,8 +149,14 @@ _Response (200 OK):_
 ```json
 {
   "generated_emails": [
-    "random1_word456@yourdomain.com",
-    "random2_word789@yourdomain.com"
+    {
+      "email": "random1_word456@yourdomain.com",
+      "comment": "test"
+    },
+    {
+      "email": "random2_word789@yourdomain.com",
+      "comment": "none"
+    }
   ]
 }
 ```

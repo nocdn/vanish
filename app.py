@@ -60,7 +60,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS temporary_emails (
                 email TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL
+                expires_at TEXT NOT NULL,
+                comment TEXT DEFAULT 'none'
             )
         ''')
         cursor.execute('''
@@ -78,10 +79,10 @@ def init_db():
 def parse_expiry(expiry_str):
     """
     Parses expiry string (e.g., '1h', '3d', '30m') into a future datetime object.
-    Raises InvalidExpiryError if format is wrong or duration is too short (min 10m).
+    Raises InvalidExpiryError if format is wrong or duration is too short (min CLEANUP_INTERVAL_MINUTES).
     Returns None if no expiry_str is provided.
     """
-    MINIMUM_EXPIRY_MINUTES = 10 # Keep minimum check here or make it env var too
+    MINIMUM_EXPIRY_MINUTES = int(os.getenv('CLEANUP_INTERVAL_MINUTES', '5'))
     if not expiry_str: return None
     match = re.match(r'^(\d+)([hdm])$', expiry_str.lower())
     if not match:
@@ -97,7 +98,7 @@ def parse_expiry(expiry_str):
         raise InvalidExpiryError(f"Minimum expiry duration is {MINIMUM_EXPIRY_MINUTES} minutes. Requested: '{expiry_str}'")
     return now + delta
 
-def add_email_to_db(email, expires_at):
+def add_email_to_db(email, expires_at, comment="none"):
     conn = None
     try:
         conn = sqlite3.connect(DATABASE_PATH)
@@ -105,11 +106,11 @@ def add_email_to_db(email, expires_at):
         created_at = datetime.now(timezone.utc).isoformat()
         expires_at_iso = expires_at.isoformat() if expires_at else 'never'
         cursor.execute('''
-            INSERT OR REPLACE INTO temporary_emails (email, created_at, expires_at)
-            VALUES (?, ?, ?)
-        ''', (email, created_at, expires_at_iso))
+            INSERT OR REPLACE INTO temporary_emails (email, created_at, expires_at, comment)
+            VALUES (?, ?, ?, ?)
+        ''', (email, created_at, expires_at_iso, comment))
         conn.commit()
-        logger.info(f"Added/updated email {email} in DB with expiry {expires_at_iso}")
+        logger.info(f"Added/updated email {email} in DB with expiry {expires_at_iso} and comment '{comment}'")
         return True
     except Exception as e:
         logger.exception(f"Failed to add email {email} to database: {e}")
@@ -133,6 +134,24 @@ def remove_email_from_db(email):
         logger.exception(f"Failed to remove email {email} from database: {e}")
         if conn: conn.rollback()
         return False
+    finally:
+        if conn: conn.close()
+
+def get_comment_for_email(email):
+    """Return the comment for a given email, or 'none' if not found."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT comment FROM temporary_emails WHERE email = ?', (email,))
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+        else:
+            return "none"
+    except Exception as e:
+        logger.exception(f"Failed to get comment for email {email}: {e}")
+        return "none"
     finally:
         if conn: conn.close()
 
@@ -252,6 +271,8 @@ def cleanup_expired_emails():
         logger.info("Running scheduled cleanup job for expired emails...")
         api_token = os.getenv('CLOUDFLARE_API_TOKEN')
         zone_id = os.getenv('CLOUDFLARE_ZONE_ID')
+        clear_after_expiry = os.getenv('CLEAR_AFTER_EXPIRY', 'false').lower() == 'true'
+        
         if not api_token or not zone_id:
             logger.error("Cleanup job: Missing Cloudflare credentials.")
             return
@@ -260,34 +281,61 @@ def cleanup_expired_emails():
             conn = sqlite3.connect(DATABASE_PATH)
             cursor = conn.cursor()
             now_iso = datetime.now(timezone.utc).isoformat()
-            cursor.execute("SELECT email FROM temporary_emails WHERE expires_at != 'never' AND expires_at < ?", (now_iso,))
-            expired_emails = [row[0] for row in cursor.fetchall()]
+            logger.info(f"Cleanup job: Current time (UTC): {now_iso}")
+            
+            # First check what emails should expire
+            cursor.execute("SELECT email, expires_at FROM temporary_emails WHERE expires_at != 'never'")
+            all_emails = cursor.fetchall()
+            for email, exp_time in all_emails:
+                logger.info(f"Cleanup job: Found email {email} with expiry {exp_time}, current time: {now_iso}")
+            
+            # Now get the ones that have actually expired
+            cursor.execute("SELECT email, expires_at FROM temporary_emails WHERE expires_at != 'never' AND expires_at < ?", (now_iso,))
+            expired_details = cursor.fetchall()
+            expired_emails = [row[0] for row in expired_details]
+            
             if not expired_emails:
                 logger.info("Cleanup job: No expired emails found."); conn.close(); return
+            
             logger.info(f"Cleanup job: Found {len(expired_emails)} expired emails: {expired_emails}")
+            for email, exp_time in expired_details:
+                logger.info(f"Cleanup job: Email {email} expired at {exp_time}, current time: {now_iso}")
+            
             all_rules, list_error = get_all_cloudflare_rules(api_token, zone_id)
             if list_error:
                 logger.error(f"Cleanup job: Failed list rules for deletion: {list_error}"); conn.close(); return
+            
+            logger.info(f"Cleanup job: Retrieved {len(all_rules)} rules from Cloudflare")
+            
             emails_to_delete_from_db = []
             for email in expired_emails:
+                logger.info(f"Cleanup job: Processing expired email {email}")
                 rule_id_to_remove = None
                 for rule in all_rules:
                     matchers = rule.get("matchers", [])
                     for matcher in matchers:
                          if (matcher.get("field") == "to" and matcher.get("type") == "literal" and matcher.get("value") == email):
-                             rule_id_to_remove = rule.get("id"); break
+                             rule_id_to_remove = rule.get("id")
+                             logger.info(f"Cleanup job: Found matching rule ID {rule_id_to_remove} for email {email}")
+                             break
                     if rule_id_to_remove: break
+                
                 if rule_id_to_remove:
                     logger.info(f"Cleanup job: Found rule ID {rule_id_to_remove} for expired email {email}. Deleting.")
                     success, delete_error = delete_cloudflare_rule(api_token, zone_id, rule_id_to_remove)
                     if success:
-                        logger.info(f"Cleanup job: Deleted Cloudflare rule for expired email {email}.")
-                        emails_to_delete_from_db.append(email)
-                    else: logger.error(f"Cleanup job: Failed Cloudflare deletion for {email}. Error: {delete_error}")
+                        logger.info(f"Cleanup job: Successfully deleted Cloudflare rule for expired email {email}.")
+                        if clear_after_expiry:
+                            emails_to_delete_from_db.append(email)
+                    else: 
+                        logger.error(f"Cleanup job: Failed Cloudflare deletion for {email}. Error: {delete_error}")
                 else:
                     logger.warning(f"Cleanup job: Cloudflare rule for expired email {email} not found. Removing from DB.")
-                    emails_to_delete_from_db.append(email)
-            if emails_to_delete_from_db:
+                    if clear_after_expiry:
+                        emails_to_delete_from_db.append(email)
+            
+            if emails_to_delete_from_db and clear_after_expiry:
+                logger.info(f"Cleanup job: About to remove these emails from DB: {emails_to_delete_from_db}")
                 placeholders = ','.join('?' * len(emails_to_delete_from_db))
                 cursor.execute(f"DELETE FROM temporary_emails WHERE email IN ({placeholders})", emails_to_delete_from_db)
                 conn.commit()
@@ -314,6 +362,7 @@ def generate_email_route():
     destination_email = os.getenv('DESTINATION_EMAIL')
     domain_name = os.getenv('DOMAIN_NAME')
     expiry_str = request.args.get('expiry')
+    comment = request.args.get('comment', 'none')
     missing_vars = []
     if not api_token: missing_vars.append('CLOUDFLARE_API_TOKEN')
     if not zone_id: missing_vars.append('CLOUDFLARE_ZONE_ID')
@@ -327,7 +376,7 @@ def generate_email_route():
         expires_at = parse_expiry(expiry_str)
         random_prefix = generate_random_prefix()
         temp_email = f"{random_prefix}@{domain_name}"
-        logger.info(f"Generated temporary email: {temp_email}, Expiry: {expires_at or 'None'}")
+        logger.info(f"Generated temporary email: {temp_email}, Expiry: {expires_at or 'None'}, Comment: {comment}")
     except InvalidExpiryError as e:
         logger.warning(f"Invalid expiry requested: {e}")
         return jsonify({'error': str(e)}), 400
@@ -336,10 +385,10 @@ def generate_email_route():
         return jsonify({'error': f"Failed to generate email or parse expiry: {e}"}), 500
     cf_success, cf_error_details = create_cloudflare_route(api_token, zone_id, temp_email, destination_email)
     if cf_success:
-        db_success = add_email_to_db(temp_email, expires_at)
+        db_success = add_email_to_db(temp_email, expires_at, comment)
         if not db_success:
             logger.error(f"Failed to add {temp_email} to database after Cloudflare success!")
-        return jsonify({'email': temp_email, 'expires_at': expires_at.isoformat() if expires_at else None}), 200
+        return jsonify({'email': temp_email, 'expires_at': expires_at.isoformat() if expires_at else None, 'comment': comment}), 200
     else:
         return jsonify({'error': 'Failed to create Cloudflare routing rule', 'details': cf_error_details}), 500
 
@@ -362,7 +411,10 @@ def list_email_routes():
             for matcher in matchers:
                 if matcher.get("field") == "to" and matcher.get("type") == "literal":
                     email = matcher.get("value")
-                    if email: generated_emails.append(email)
+                    if email:
+                        # Fetch comment from DB for this email
+                        comment = get_comment_for_email(email)
+                        generated_emails.append({'email': email, 'comment': comment})
                     break
     logger.info(f"Found {len(generated_emails)} email rules matching prefix '{RULE_NAME_PREFIX}'")
     return jsonify({'generated_emails': generated_emails}), 200
@@ -471,7 +523,7 @@ def health_check():
 try:
     init_db()
     scheduler = BackgroundScheduler(daemon=True)
-    cleanup_interval_minutes = int(os.getenv('CLEANUP_INTERVAL_MINUTES', '10'))
+    cleanup_interval_minutes = int(os.getenv('CLEANUP_INTERVAL_MINUTES', '5'))
     scheduler.add_job(cleanup_expired_emails, 'interval', minutes=cleanup_interval_minutes)
     atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)
     scheduler.start()

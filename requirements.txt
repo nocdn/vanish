@@ -3,4 +3,5 @@ requests
 python-dotenv
 gunicorn
 APScheduler
+apscheduler
 Flask-Limiter
