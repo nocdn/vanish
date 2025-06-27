@@ -23,7 +23,7 @@ ENV FLASK_DEBUG=false
 # REMOVED ENV DATABASE_PATH
 
 # Run app.py when the container launches using Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:6020", "--workers", "2", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:6020", "--workers", "1", "app:app"]
 
 # --- Notes on Database Persistence ---
 # The application uses a SQLite database located at the fixed path /app/data/emails.db inside the container.

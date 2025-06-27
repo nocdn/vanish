@@ -450,7 +450,6 @@ def remove_email_route(email_to_remove):
     else:
         return jsonify({'error': 'Cloudflare failed to delete the rule', 'details': cf_delete_error}), 500
 
-
 @app.route('/health', methods=['GET'])
 @limiter.limit(default_rate_limit)
 def health_check():
@@ -517,6 +516,46 @@ def health_check():
         # don't change overall status just because token is missing
 
     return jsonify(response), status_code
+
+@app.route('/help', methods=['GET'])
+@limiter.limit(default_rate_limit)
+def help_endpoint():
+    """Return concise usage instructions for the API."""
+    instructions = {
+        'service': 'Cloudflare Temp-Mail API',
+        'description': 'Generate and manage temporary email forwarding rules through Cloudflare.',
+        'endpoints': {
+            '/generate': {
+                'method': 'GET',
+                'description': 'Generate a temporary email address and create a Cloudflare routing rule.',
+                'query_params': {
+                    'expiry': "Optional. Expiry duration like '10m', '1h', '2d'. Minimum set by CLEANUP_INTERVAL_MINUTES.",
+                    'comment': 'Optional. Arbitrary comment stored alongside the generated address.'
+                },
+                'rate_limit': generate_rate_limit
+            },
+            '/list': {
+                'method': 'GET',
+                'description': 'List all temporary email addresses managed by this service.',
+                'rate_limit': default_rate_limit
+            },
+            '/remove/<email>': {
+                'method': 'DELETE',
+                'description': 'Delete a specific temporary email address and its associated Cloudflare rule.',
+                'rate_limit': default_rate_limit
+            },
+            '/health': {
+                'method': 'GET',
+                'description': 'Health check for database and Cloudflare connectivity.'
+            },
+            '/help': {
+                'method': 'GET',
+                'description': 'Display this help information.',
+                'rate_limit': default_rate_limit
+            }
+        }
+    }
+    return jsonify(instructions), 200
 
 
 # --- Initialize DB and Scheduler ---
