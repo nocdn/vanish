@@ -1,29 +1,27 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
-
-# Set the working directory in the container
+FROM python:3.11-slim AS builder
 WORKDIR /app
 
-# Copy the requirements file into the container
 COPY requirements.txt .
+RUN pip wheel --wheel-dir /wheels -r requirements.txt
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir --trusted-host pypi.python.org -r requirements.txt
+FROM python:3.11-slim AS runtime
+WORKDIR /app
 
-# Copy the rest of the application code into the container
-COPY app.py .
-COPY .env.example .
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
-# Make port 6020 available
+COPY . .
+
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
+
 EXPOSE 6020
 
-# Define environment variables (can be overridden)
 ENV FLASK_RUN_PORT=6020
 ENV FLASK_DEBUG=false
-# REMOVED ENV DATABASE_PATH
 
-# Run app.py when the container launches using Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:6020", "--workers", "1", "app:app"]
+# Run with a single worker to avoid SQLite write contention (see critique 1.2)
+CMD ["gunicorn", "--bind", "0.0.0.0:6020", "--workers", "1", "main:app"]
 
 # --- Notes on Database Persistence ---
 # The application uses a SQLite database located at the fixed path /app/data/emails.db inside the container.
