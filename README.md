@@ -1,4 +1,4 @@
-# cloudflare-temp-mail
+# Vanish
 
 > self-hosted REST API to automatically create temporary email addresses on your own domain using Cloudflare, with optional expiry.
 
@@ -19,7 +19,7 @@ This API allows you to quickly generate temporary email forwarding rules on your
 1.  **Clone the repository** and navigate into the directory:
 
     ```bash
-    git clone https://github.com/nocdn/cloudflare-temp-mail.git
+    git clone https://github.com/nocdn/vanish.git
     cd cloudflare-temp-mail/
     ```
 
@@ -44,7 +44,7 @@ This API allows you to quickly generate temporary email forwarding rules on your
       1.  Go to your [Cloudflare dashboard](https://dash.cloudflare.com) -> My Profile -> API Tokens.
       2.  Click **"Create Token"**.
       3.  Find the **"Custom token"** template and click **"Get started"**.
-      4.  Give the token a name (e.g., `temp-email-api`).
+      4.  Give the token a name (e.g., `vanish-api`).
       5.  Set the following **Permissions**:
           - `Zone` - `Email Routing` - `Edit`
       6.  Set the **Zone Resources**:
@@ -69,7 +69,7 @@ This API allows you to quickly generate temporary email forwarding rules on your
 5.  **Build the Docker Image**:
 
     ```bash
-    docker build -t cloudflare-temp-email-img .
+    docker build -t vanish-img .
     ```
 
 6.  **Run the Docker Container**:
@@ -80,8 +80,8 @@ This API allows you to quickly generate temporary email forwarding rules on your
       -p 6020:6020 \
       --env-file .env \
       -v "$(pwd)/data":/app/data \
-      --name cloudflare-temp-email \
-      cloudflare-temp-email-img
+      --name vanish \
+      vanish-img
     ```
 
 The API should now be running and accessible at `http://<your_server_ip>:6020`.
@@ -233,3 +233,15 @@ _Response (200 OK):_
 ### License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### One-Click Deploy to Render
+
+You can spin up the API on the free Render tier in seconds:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/nocdn/vanish)
+
+The button imports the project, builds the Docker image using the provided `Dockerfile`, and provisions a web service. After the deploy completes go to **Environment → Add Environment Variable** and enter the values from your `.env` file (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `DOMAIN_NAME`, `DESTINATION_EMAIL`, etc.).
+
+Render automatically maps the internal port `6020` to an external URL, and the health-check is wired to `/health`.
+
+---

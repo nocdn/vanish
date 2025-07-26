@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: cloudflare-temp-mail-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: CLOUDFLARE_API_TOKEN # add these in the Render dashboard after deploy
+        sync: false
+      - key: CLOUDFLARE_ZONE_ID
+        sync: false
+      - key: DOMAIN_NAME
+        sync: false
+      - key: DESTINATION_EMAIL
+        sync: false
+      - key: RATE_LIMIT_GENERATE
+        value: "20 per day"
+      - key: RATE_LIMIT_DEFAULT
+        value: "60 per minute"
+      - key: CLEAR_AFTER_EXPIRY
+        value: "false"
+      - key: CLEANUP_INTERVAL_MINUTES
+        value: "5"
