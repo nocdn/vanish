@@ -8,6 +8,7 @@ from flask import g, current_app
 logger = logging.getLogger(__name__)
 
 DATABASE_PATH = os.getenv('DATABASE_PATH', '/app/data/emails.db')
+TABLE_NAME = 'emails'
 
 def get_db():
     """Return a connection for the current request context, creating it if needed."""
@@ -30,10 +31,9 @@ def init_db():
         path_obj.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(DATABASE_PATH)
         cursor = db.cursor()
-        # Added rule_id column (critique 4.1)
         cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS temporary_emails (
+            f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
                 email TEXT PRIMARY KEY,
                 rule_id TEXT,
                 created_at TEXT NOT NULL,
@@ -43,10 +43,9 @@ def init_db():
             """
         )
         cursor.execute(
-            """CREATE INDEX IF NOT EXISTS idx_expires_at ON temporary_emails (expires_at)"""
+            f"""CREATE INDEX IF NOT EXISTS idx_expires_at ON {TABLE_NAME} (expires_at)"""
         )
         db.commit()
-        # Ensure legacy DBs have rule_id column
         migrate_add_rule_id()
         logger.info("Database initialised or already present at %s", DATABASE_PATH)
     except Exception:
@@ -65,7 +64,7 @@ def add_email(email: str, rule_id: str, expires_at, comment: str = "none") -> bo
         created_at = datetime.now(timezone.utc).isoformat()
         expires_at_iso = expires_at.isoformat() if expires_at else 'never'
         db.execute(
-            """INSERT OR REPLACE INTO temporary_emails (email, rule_id, created_at, expires_at, comment)
+            f"""INSERT OR REPLACE INTO {TABLE_NAME} (email, rule_id, created_at, expires_at, comment)
                VALUES (?, ?, ?, ?, ?)""",
             (email, rule_id, created_at, expires_at_iso, comment),
         )
@@ -80,7 +79,7 @@ def add_email(email: str, rule_id: str, expires_at, comment: str = "none") -> bo
 def remove_email(email: str) -> bool:
     try:
         db = get_db()
-        db.execute("DELETE FROM temporary_emails WHERE email = ?", (email,))
+        db.execute(f"DELETE FROM {TABLE_NAME} WHERE email = ?", (email,))
         db.commit()
         logger.debug("Removed %s from DB", email)
         return True
@@ -92,7 +91,7 @@ def remove_email(email: str) -> bool:
 def get_comment(email: str) -> str:
     try:
         db = get_db()
-        row = db.execute("SELECT comment FROM temporary_emails WHERE email = ?", (email,)).fetchone()
+        row = db.execute(f"SELECT comment FROM {TABLE_NAME} WHERE email = ?", (email,)).fetchone()
         return row[0] if row else "none"
     except Exception:
         logger.exception("Failed to fetch comment for %s", email)
@@ -103,7 +102,7 @@ def get_expired_emails(now_iso):
     """Return list of rows for expired emails."""
     db = get_db()
     return db.execute(
-        "SELECT email, rule_id, expires_at FROM temporary_emails WHERE expires_at != 'never' AND expires_at < ?",
+        f"SELECT email, rule_id, expires_at FROM {TABLE_NAME} WHERE expires_at != 'never' AND expires_at < ?",
         (now_iso,),
     ).fetchall()
 
@@ -113,12 +112,12 @@ def migrate_add_rule_id():
     db = sqlite3.connect(DATABASE_PATH)
     try:
         cursor = db.cursor()
-        cursor.execute("PRAGMA table_info(temporary_emails)")
+        cursor.execute(f"PRAGMA table_info({TABLE_NAME})")
         columns = [row[1] for row in cursor.fetchall()]
         if 'rule_id' not in columns:
-            cursor.execute("ALTER TABLE temporary_emails ADD COLUMN rule_id TEXT")
+            cursor.execute(f"ALTER TABLE {TABLE_NAME} ADD COLUMN rule_id TEXT")
             db.commit()
-            logger.info("Added missing rule_id column to temporary_emails table")
+            logger.info("Added missing rule_id column to %s table", TABLE_NAME)
     except Exception:
         logger.exception("Failed to run rule_id migration")
     finally:
