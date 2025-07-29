@@ -66,15 +66,13 @@ This API allows you to quickly generate temporary email forwarding rules on your
     mkdir data
     ```
 
-5.  **Build the Docker Image**:
+5.  **Build and Run the Docker Container**:
+
+    This command builds the image (`vanish-img`) and then runs it in detached mode (`-d`), mapping port 6020, loading your `.env` file, mounting the local `./data` directory for database persistence, and naming the container. The `--restart=always` flag ensures the container restarts automatically if stopped.  
+    _For security reasons, do not run Docker commands as root._
 
     ```bash
-    docker build -t vanish-img .
-    ```
-
-6.  **Run the Docker Container**:
-    This command runs the container in detached mode (`-d`), maps port 6020, loads your `.env` file, mounts the local `./data` directory into the container for database persistence (`-v`) and names the container. The `--restart=always` flag will make the container restart if it is ever stopped.
-    ```bash
+    docker build -t vanish-img . && \
     docker run -d \
       --restart=always \
       -p 6020:6020 \

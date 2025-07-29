@@ -1,4 +1,12 @@
 FROM python:3.11-slim AS builder
+
+# Prevent building as root for security
+RUN if [ "$(whoami)" = "root" ] && [ "${DOCKER_BUILDKIT:-}" != "1" ]; then \
+        echo "ERROR: Do not build this container as root user for security reasons." && \
+        echo "Please run: docker build commands as a non-root user." && \
+        exit 1; \
+    fi
+
 WORKDIR /app
 
 COPY requirements.txt .
