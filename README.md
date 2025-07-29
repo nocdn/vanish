@@ -66,6 +66,30 @@ This API allows you to quickly generate temporary email forwarding rules on your
     mkdir data
     ```
 
+> [!IMPORTANT] > **Security Warning: Do Not Run as Root**
+>
+> For security reasons, **never run this Docker command as root** on your host system. If you're currently logged in as root:
+>
+> 1. Create a regular user account:
+>
+>    ```bash
+>    adduser myuser
+>    ```
+>
+> 2. Add the user to the docker group:
+>
+>    ```bash
+>    usermod -aG docker myuser
+>    ```
+>
+> 3. Switch to that user:
+>
+>    ```bash
+>    su - myuser
+>    ```
+>
+> 4. Navigate back to your project directory and continue with the build steps below.
+
 5.  **Build and Run the Docker Container**:
 
     This command builds the image (`vanish-img`) and then runs it in detached mode (`-d`), mapping port 6020, loading your `.env` file, mounting the local `./data` directory for database persistence, and naming the container. The `--restart=always` flag ensures the container restarts automatically if stopped.  
