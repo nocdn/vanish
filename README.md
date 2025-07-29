@@ -89,7 +89,7 @@ su - myuser
 
 4. Navigate back to your project directory and continue with the build steps below.
 
-5.  **Build and Run the Docker Container**:
+**Build and Run the Docker Container**:
 
     This command builds the image (`vanish-img`) and then runs it in detached mode (`-d`), mapping port 6020, loading your `.env` file, mounting the local `./data` directory for database persistence, and naming the container. The `--restart=always` flag ensures the container restarts automatically if stopped.  
     _For security reasons, do not run Docker commands as root._
