@@ -66,7 +66,7 @@ This API allows you to quickly generate temporary email forwarding rules on your
     mkdir data
     ```
 
-> [!IMPORTANT] > **Security Warning: Do Not Run as Root**
+> [!IMPORTANT]
 > For security reasons, **never run this Docker command as root** on your host system. If you're currently logged in as root:
 
 1. Create a regular user account:
