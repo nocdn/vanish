@@ -91,10 +91,9 @@ su - myuser
 
 **Build and Run the Docker Container**:
 
-    This command builds the image (`vanish-img`) and then runs it in detached mode (`-d`), mapping port 6020, loading your `.env` file, mounting the local `./data` directory for database persistence, and naming the container. The `--restart=always` flag ensures the container restarts automatically if stopped.  
-    _For security reasons, do not run Docker commands as root._
+This command builds the image (`vanish-img`) and then runs it in detached mode (`-d`), mapping port 6020, loading your `.env` file, mounting the local `./data` directory for database persistence, and naming the container. The `--restart=always` flag ensures the container restarts automatically if stopped.  
 
-    ```bash
+```bash
     docker build -t vanish-img . && \
     docker run -d \
       --restart=always \
